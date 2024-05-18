@@ -1,4 +1,11 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter_typeahead/flutter_typeahead.dart';
+import 'package:maplibre_demo/controllers/fetchdata_controller.dart';
+import 'package:maplibre_demo/models/prediction.dart';
 import 'package:maplibre_gl/mapbox_gl.dart';
 
 void main() {
@@ -43,26 +50,135 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> {
-  MaplibreMapController? mapController;
+  late MaplibreMapController mapController;
+  TextEditingController _searchController = TextEditingController();
+
+  Future<List<Predection>> placeAutoComplete(String query) async {
+    return fakePredection
+        .where((element) =>
+            element.name.toUpperCase().contains(query.toUpperCase()))
+        .toList();
+  }
+
+  void _addMarker(LatLng point) {
+    mapController.addSymbol(SymbolOptions(
+      geometry: point,
+      iconImage: "custom-marker",
+      iconSize: 0.1,
+    ));
+  }
+
+  Future<void> _loadMarkerImage() async {
+    final ByteData bytes = await rootBundle.load("assets/images/marker.png");
+    final Uint8List list = bytes.buffer.asUint8List();
+    mapController.addImage("custom-marker", list);
+  }
 
   void _onMapCreated(MaplibreMapController controller) {
     mapController = controller;
+    _loadMarkerImage();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
-        title: Text('MapLibre GL Demo'),
+        title: const Text('MapLibre GL Demo'),
       ),
-      body: MaplibreMap(
-        styleString:
-            'https://maps.visafe.com.vn/api/v1/styles/colorful/style.json',
-        onMapCreated: _onMapCreated,
-        initialCameraPosition: CameraPosition(
-          target: LatLng(37.7749, -122.4194),
-          zoom: 10.0,
-        ),
+      body: Stack(
+        children: [
+          MaplibreMap(
+            styleString:
+                'https://maps.visafe.com.vn/api/v1/styles/colorful/style.json',
+            onMapCreated: _onMapCreated,
+            initialCameraPosition: const CameraPosition(
+              target: LatLng(10.7885905, 106.6669843),
+              zoom: 16.0,
+            ),
+            onMapClick: (point, coordinates) {
+              setState(() {
+                _addMarker(coordinates);
+              });
+            },
+          ),
+          Positioned(
+              top: 5,
+              left: 10,
+              right: 50,
+              child: Card(
+                elevation: 5,
+                color: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(30.0),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 15.0, right: 8.0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                          child: TypeAheadField<Predection>(
+                        controller: _searchController,
+                        onSelected: (value) {
+                          _searchController.text = value.name;
+                          _addMarker(value.latLng);
+                          mapController.animateCamera(
+                              CameraUpdate.newLatLngZoom(value.latLng, 16.0),
+                              duration: const Duration(seconds: 5));
+                        },
+                        builder: (context, contronller, focusNode) {
+                          return TextField(
+                            controller: contronller,
+                            focusNode: focusNode,
+                            decoration: const InputDecoration(
+                              hintText: 'Search location',
+                              hintStyle: TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 16,
+                                  letterSpacing: 1.2),
+                              border: InputBorder.none,
+                            ),
+                            onSubmitted: (value) {
+                              placeAutoComplete(value);
+                            },
+                          );
+                        },
+                        suggestionsCallback: (pattern) async {
+                          print(pattern);
+                          return await placeAutoComplete(pattern);
+                        },
+                        itemBuilder: (context, suggestion) {
+                          return Padding(
+                            padding: const EdgeInsets.all(3.0),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.location_on),
+                                const SizedBox(width: 3),
+                                Expanded(
+                                    child: Text(
+                                  suggestion.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                  ),
+                                ))
+                              ],
+                            ),
+                          );
+                        },
+                      )),
+                      IconButton(
+                        icon: const Icon(Icons.search),
+                        onPressed: () {
+                          placeAutoComplete(_searchController.text);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ))
+        ],
       ),
     );
   }
